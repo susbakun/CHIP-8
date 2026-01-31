@@ -21,7 +21,7 @@ impl CPU {
         loop {
             let opcode = self.read_opcode();
             self.position_in_memory += 2;
-;
+            
             // first register addr
             let x = ((opcode & 0x0F00) >> 8) as u8;
             // second register addr
