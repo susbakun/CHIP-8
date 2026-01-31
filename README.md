@@ -1,4 +1,4 @@
-# rust-in-action
+# CHIP-8
 
 A minimal CHIP-8 emulator written in Rust, based on the project from **Rust in Action** by Timothy Samuel McNamara.
 
