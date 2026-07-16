@@ -3,17 +3,25 @@ import type { Display } from "./display.ts"
 const MEMORY_START = 0x0200
 
 export class CPU {
-  private memory = new Uint8Array()
-  private pc = MEMORY_START
-  private registers = new Uint8Array()
-  private i_index = 0x0
-  private stack = new Uint16Array()
+  // 4096 bytes of RAM
+  public memory = new Uint8Array(0x1000)
+  // 16 bit program counter (which starts at 0x200 due to chip8 interpreter taking up the first 512 bytes)
+  public pc = MEMORY_START
+  // 16 x 8-bit data registers named V0 to VF
+  public registers = new Uint8Array(0x10)
+  // 16-bit register called I, This register is generally used to store memory addresses.
+  public i_index = 0x0
+  // 16 x 16-bit values for the stack
+  public stack = new Uint16Array(0x10)
 
-  public fetch() {
+  public fetch(): number {
     // be ready to fetch the next opcode
     this.pc += 2
 
-    return this.memory[this.pc]
+    const chunk1 = this.memory[this.pc]
+    const chunk2 = this.memory[this.pc + 1]
+
+    return (chunk1 << 8) + chunk2
   }
 
   // 2-byte opcode
