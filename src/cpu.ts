@@ -1,20 +1,36 @@
 import type { Display } from "./display.ts"
+import { FONTSET } from "./font.ts"
 
 const MEMORY_START = 0x0200
 
 export class CPU {
   // 4096 bytes of RAM
-  public memory = new Uint8Array(0x1000)
+  private memory = new Uint8Array(0x1000)
   // 16 bit program counter (which starts at 0x200 due to chip8 interpreter taking up the first 512 bytes)
-  public pc = MEMORY_START
+  private pc = MEMORY_START
   // 16 x 8-bit data registers named V0 to VF
   public registers = new Uint8Array(0x10)
   // 16-bit register called I, This register is generally used to store memory addresses.
-  public i_index = 0x0
+  private i_index = 0x0
   // 16 x 16-bit values for the stack
-  public stack = new Uint16Array(0x10)
+  private stack = new Uint16Array(0x10)
+  // stack pointer
+  private sp = -1
 
-  public fetch(): number {
+  constructor() {
+    this.load_fonts()
+  }
+
+  public load_fonts() {
+    this.memory.set(FONTSET, 0x50)
+  }
+
+  public cycle(display: Display) {
+    const opcode = this.fetch()
+    this.decode(opcode, display)
+  }
+
+  private fetch(): number {
     // be ready to fetch the next opcode
     this.pc += 2
 
@@ -26,39 +42,83 @@ export class CPU {
 
   // 2-byte opcode
   public decode(opcode: number, display: Display) {
-    const command = (opcode >> 12) & 0xf
+    const first_nibble = opcode & 0xf000
     const x = (opcode >> 8) & 0xf
     const y = (opcode >> 4) & 0xf
     const n = opcode & 0xf
     const nn = opcode & 0xff
     const nnn = opcode & 0xfff
 
-    switch (opcode) {
+    let rx_value = this.registers[x]
+    let ry_value = this.registers[y]
+
+    switch (first_nibble) {
       case 0x00e0:
-        display.clear()
+        //clear display
+        if (opcode == 0x00e0) {
+          display.clear()
+        } // ret
+        else if (opcode == 0x00ee) {
+          this.ret()
+        }
         break
-      case 0x1000 + nnn:
-        this.pc = nnn
+      // jump
+      case 0x1000:
+        this.jump(nnn)
+        break
+      // call
+      case 0x2000:
+        this.call(nnn)
+        break
+      // skips
+      case 0x3000:
+        if (rx_value == nn) {
+          this.skip_command()
+        }
+        break
+      case 0x4000:
+        if (rx_value != nn) {
+          this.skip_command()
+        }
+        break
+      case 0x5000:
+        if (rx_value == ry_value) {
+          this.skip_command()
+        }
+        break
+      case 0x9000:
+        if (rx_value != ry_value) {
+          this.skip_command()
+        }
+        break
+      // set
+      case 0x6000:
+        this.registers[x] = nn
+        break
+      // add
+      case 0x7000:
+        this.registers[x] += nn
         break
     }
   }
-}
 
-/* fonts
-0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-0x20, 0x60, 0x20, 0x20, 0x70, // 1
-0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-0xF0, 0x80, 0xF0, 0x80, 0x80  // F
-*/
+  // execute
+  private jump(addr: number) {
+    this.pc = addr
+  }
+
+  private call(addr: number) {
+    this.sp++
+    this.stack[this.sp] = this.pc
+    this.jump(addr)
+  }
+
+  private ret() {
+    this.jump(this.stack[this.sp])
+    this.sp--
+  }
+
+  private skip_command() {
+    this.pc += 2
+  }
+}

@@ -1,18 +1,8 @@
-import { CPU } from "./cpu.ts"
-import { Display } from "./display.ts"
+import { Computer } from "./computer.ts"
 
 function main() {
-  const display = new Display()
-  const cpu = new CPU()
-
-  display.create()
-
-  while (true) {
-    const opcode = cpu.fetch()
-    if (!opcode) continue
-
-    cpu.decode(opcode, display)
-  }
+  const computer = new Computer()
+  computer.run()
 }
 
 main()

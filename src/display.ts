@@ -4,10 +4,9 @@ export class Display {
   public width = 64
   public height = 32
   public pixels = Buffer.alloc(this.width * this.height * 4)
+  public window: sdl.Sdl.Video.Window
 
-  public window: sdl.Sdl.Video.Window | null = null
-
-  create() {
+  constructor() {
     this.window = sdl.video.createWindow({
       title: "CHIP-8",
       width: this.width * 10,
@@ -16,16 +15,14 @@ export class Display {
   }
 
   clear() {
-    if (this.window) {
-      this.pixels.fill(255)
+    this.pixels.fill(255)
 
-      this.window.render(
-        this.width,
-        this.height,
-        this.width * 4,
-        "rgba32",
-        this.pixels,
-      )
-    }
+    this.window.render(
+      this.width,
+      this.height,
+      this.width * 4,
+      "rgba32",
+      this.pixels,
+    )
   }
 }
