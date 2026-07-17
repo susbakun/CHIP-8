@@ -44,7 +44,7 @@ export class CPU {
 
   // 2-byte opcode
   public decode(opcode: number, display: Display) {
-    const first_nibble = opcode >> 12
+    const first_nibble = opcode & 0xf000
     const x = (opcode >> 8) & 0xf
     const y = (opcode >> 4) & 0xf
     const n = opcode & 0xf
@@ -56,7 +56,7 @@ export class CPU {
 
     let sub = rx_value - ry_value
 
-    switch (opcode & 0xf000) {
+    switch (first_nibble) {
       case 0x0000:
         switch (nnn) {
           //clear display
