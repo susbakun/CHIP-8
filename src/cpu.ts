@@ -16,6 +16,8 @@ export class CPU {
   private stack = new Uint16Array(0x10)
   // stack pointer
   private sp = -1
+  // last register (used for setting carry flags)
+  private last_register = 15
 
   constructor() {
     this.load_fonts()
@@ -42,7 +44,7 @@ export class CPU {
 
   // 2-byte opcode
   public decode(opcode: number, display: Display) {
-    const first_nibble = opcode & 0xf000
+    const first_nibble = opcode >> 12
     const x = (opcode >> 8) & 0xf
     const y = (opcode >> 4) & 0xf
     const n = opcode & 0xf
@@ -52,14 +54,19 @@ export class CPU {
     let rx_value = this.registers[x]
     let ry_value = this.registers[y]
 
-    switch (first_nibble) {
-      case 0x00e0:
-        //clear display
-        if (opcode == 0x00e0) {
-          display.clear()
-        } // ret
-        else if (opcode == 0x00ee) {
-          this.ret()
+    let sub = rx_value - ry_value
+
+    switch (opcode & 0xf000) {
+      case 0x0000:
+        switch (nnn) {
+          //clear display
+          case 0x00e0:
+            display.clear()
+            break
+          //ret
+          case 0x00ee:
+            this.ret()
+            break
         }
         break
       // jump
@@ -98,6 +105,123 @@ export class CPU {
       // add
       case 0x7000:
         this.registers[x] += nn
+        break
+      // Logical and arithmetic instructions
+      case 0x8000:
+        switch (n) {
+          case 0:
+            this.registers[x] = ry_value
+            break
+          case 1:
+            this.registers[x] |= ry_value
+            break
+          case 2:
+            this.registers[x] &= ry_value
+            break
+          case 3:
+            this.registers[x] ^= ry_value
+            break
+          case 4:
+            const sum = rx_value + ry_value
+
+            this.registers[this.last_register] = sum > 0xff ? 1 : 0
+            this.registers[x] = sum
+            break
+          case 5:
+            sub = rx_value - ry_value
+
+            this.registers[this.last_register] = sub >= 0 ? 1 : 0
+            this.registers[x] = sub
+
+            break
+          case 6:
+            this.registers[x] = ry_value >> 1
+
+            this.registers[this.last_register] = ry_value & 0x1
+
+            break
+
+          case 7:
+            sub = ry_value - rx_value
+
+            this.registers[this.last_register] = sub >= 0 ? 1 : 0
+            this.registers[x] = sub
+
+            break
+
+          case 0xe:
+            this.registers[x] = ry_value << 1
+
+            this.registers[this.last_register] = ry_value >> 7
+
+            break
+        }
+        break
+
+      // set index
+      case 0xa000:
+        this.i_index = nnn
+        break
+      // jump with offset
+      case 0xb000:
+        this.jump(nnn + rx_value)
+
+        break
+
+      // random
+      case 0xc000:
+        const min = 0
+        const max = 255
+        let random_number = Math.floor(Math.random() * (max - min + 1)) + min
+
+        random_number &= nn
+
+        this.registers[x] = random_number
+
+        break
+
+      // display
+      case 0xd000:
+        const startX = this.registers[x] % display.width
+        const startY = this.registers[y] % display.height
+
+        this.registers[this.last_register] = 0
+
+        for (let row = 0; row < n; row++) {
+          let x_coord = startX
+          const y_coord = startY + row
+
+          if (y_coord >= display.height) break
+
+          const sprite_byte = this.memory[this.i_index + row]
+
+          for (let bit = 0; bit < 8; bit++) {
+            if (x_coord >= display.width) break
+
+            const index = (display.width * y_coord + x_coord) * 3
+            const color_bit = (sprite_byte >> (7 - bit)) & 0x1
+
+            if (display.pixels[index] === 1 && color_bit === 1)
+              this.registers[this.last_register] = 1
+
+            display.display_sprite(index, color_bit)
+
+            x_coord++
+          }
+        }
+
+        break
+
+      case 0xe000:
+        const keycode = rx_value
+        switch (nn) {
+          case 0x9e:
+            if (display.keyboard.is_key_pressed(keycode)) this.skip_command()
+            break
+          case 0xa1:
+            if (!display.keyboard.is_key_pressed(keycode)) this.skip_command()
+            break
+        }
         break
     }
   }
