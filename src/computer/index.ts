@@ -1,4 +1,4 @@
-import { CPU } from "./cpu.ts"
+import { CPU } from "./cpu/index.ts"
 import { Display } from "./display.ts"
 
 export class Computer {

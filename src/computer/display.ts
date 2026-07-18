@@ -17,8 +17,8 @@ export class Display {
     })
 
     // setup event listeners
-    this.window.on("keyDown", this.keyboard.keyDown)
-    this.window.on("keyUp", this.keyboard.keyUp)
+    this.window.on("keyDown", (event) => this.keyboard.keyDown(event))
+    this.window.on("keyUp", (event) => this.keyboard.keyUp(event))
   }
 
   // colors or either 0 or 1 (black or white)

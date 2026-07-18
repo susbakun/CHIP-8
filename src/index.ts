@@ -1,4 +1,4 @@
-import { Computer } from "./computer.ts"
+import { Computer } from "./computer/index.ts"
 
 function main() {
   const computer = new Computer()
