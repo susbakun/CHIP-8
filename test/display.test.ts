@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Display } from "../src/display"
+import { Display } from "../src/computer/display"
 
 describe("Display", () => {
   it("starts with a black framebuffer", () => {

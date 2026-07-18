@@ -4,7 +4,7 @@ type KeyDownType = Pick<sdl.Events.Window.KeyDown, "key">
 type KeyUpType = Pick<sdl.Events.Window.KeyUp, "key">
 
 export class Keyboard {
-  private keys = new Array(16).fill(false)
+  private keys = new Array<boolean>(16).fill(false)
   private keys_map: Map<string, number> = new Map()
 
   constructor() {
@@ -29,6 +29,9 @@ export class Keyboard {
 
   public keyDown(event: KeyDownType) {
     if (event.key) {
+      // exit the program if escape was hit
+      if (event.key === "escape") process.exit(0)
+
       const chip8_key = this.keys_map.get(event.key)
       if (chip8_key) {
         this.keys[chip8_key] = true
@@ -43,6 +46,10 @@ export class Keyboard {
         this.keys[chip8_key] = false
       }
     }
+  }
+
+  public get_pressed_key() {
+    return this.keys.findIndex((pressed) => pressed === true)
   }
 
   public is_key_pressed(keycode: number): boolean {

@@ -7,12 +7,13 @@ import {
   yDecoder,
 } from "./decoders.ts"
 import type { Display } from "../display.ts"
-import { FONTSET } from "../../font.ts"
+import { FONTSET, FONTSTART } from "../../font.ts"
 import type { Instruction } from "../../types.ts"
+import type { Timer } from "../timer.ts"
 
 const MEMORY_START = 0x0200
 
-class CPU {
+export class CPU {
   // 4096 bytes of RAM
   private memory = new Uint8Array(0x1000)
   // 16 bit program counter (which starts at 0x200 due to chip8 interpreter taking up the first 512 bytes)
@@ -32,31 +33,37 @@ class CPU {
     this.load_fonts()
   }
 
-  public load_fonts() {
-    this.memory.set(FONTSET, 0x50)
+  public load_rom(rom: Buffer) {
+    for (let i = 0; i < rom.length; i++) {
+      this.store_in_memory(MEMORY_START + i, rom[i])
+    }
   }
 
-  public cycle(display: Display) {
+  public load_fonts() {
+    this.memory.set(FONTSET, FONTSTART)
+  }
+
+  public cycle(display: Display, timer: Timer) {
     // first fetch the command
     const opcode = this.fetch()
     // get the corresponding command
-    const instruction = this.decode(opcode, display)
+    const instruction = this.decode(opcode, display, timer)
     // execute it
     instruction.execute.apply(this, instruction.args)
   }
 
   private fetch(): number {
-    // be ready to fetch the next opcode
-    this.pc += 2
-
     const chunk1 = this.memory[this.pc]
     const chunk2 = this.memory[this.pc + 1]
+
+    // be ready to fetch the next opcode
+    this.pc += 2
 
     return (chunk1 << 8) + chunk2
   }
 
   // 2-byte opcode
-  public decode(opcode: number, display: Display): Instruction {
+  public decode(opcode: number, display: Display, timer: Timer): Instruction {
     const first_nibble = firstNibbleDecoder(opcode)
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
@@ -168,6 +175,15 @@ class CPU {
           args: [opcode, display],
         }
 
+      // timer
+      case 0xf000:
+        return {
+          execute: this.executef,
+          args: [opcode, x, display, timer],
+        }
+        break
+
+      // skip the command if it was unknown
       default:
         return {
           execute: this.skip_command,
@@ -217,6 +233,10 @@ class CPU {
     this.pc += 2
   }
 
+  private revert_command() {
+    this.pc -= 2
+  }
+
   private execute8(opcode: number) {
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
@@ -229,23 +249,29 @@ class CPU {
       case 0:
         this.set_register(x, ry_value)
         break
+
       case 1:
         this.set_register(x, rx_value | ry_value)
         break
+
       case 2:
         this.set_register(x, rx_value & ry_value)
         break
+
       case 3:
         this.set_register(x, rx_value ^ ry_value)
         break
+
       case 4:
         this.add_two_registers(x, y)
         break
+
       case 5:
         this.subtract_two_registers(x, y)
         break
+
       case 6:
-        this.right_shift_reg_and_store(x, y)
+        this.right_shift_reg_and_store_in_another_reg(x, y)
         break
 
       case 7:
@@ -253,7 +279,7 @@ class CPU {
         break
 
       case 0xe:
-        this.left_shift_reg_and_store(x, y)
+        this.left_shift_reg_and_store_in_another_reg(x, y)
         break
     }
   }
@@ -284,14 +310,14 @@ class CPU {
     this.set_register(reg1, sub)
   }
 
-  private right_shift_reg_and_store(reg1: number, reg2: number) {
+  private right_shift_reg_and_store_in_another_reg(reg1: number, reg2: number) {
     const reg2_value = this.registers[reg2]
 
     this.set_register(reg1, reg2_value >> 1)
     this.set_register(this.last_register, reg2_value & 0x1)
   }
 
-  private left_shift_reg_and_store(reg1: number, reg2: number) {
+  private left_shift_reg_and_store_in_another_reg(reg1: number, reg2: number) {
     const reg2_value = this.registers[reg2]
 
     this.set_register(reg1, reg2_value << 1)
@@ -339,13 +365,13 @@ class CPU {
         // reached right edge?
         if (x_coord >= display.width) break
 
-        const index = (display.width * y_coord + x_coord) * 3
+        const index = display.width * y_coord + x_coord
         const color_bit = (sprite_byte >> (7 - bit)) & 0x1
 
         if (display.pixels[index] === 1 && color_bit === 1)
           this.set_register(this.last_register, 1)
 
-        display.display_sprite(index, color_bit)
+        display.write_to_pixels(index, color_bit)
 
         x_coord++
       }
@@ -368,6 +394,78 @@ class CPU {
         break
     }
   }
-}
 
-export { CPU }
+  private executef(
+    opcode: number,
+    reg: number,
+    display: Display,
+    timer: Timer,
+  ) {
+    const nn = nnDecoder(opcode)
+
+    const reg_value = this.registers[reg]
+
+    switch (nn) {
+      // timers
+      case 0x07:
+        this.set_register(reg, timer.delayTimer)
+        break
+
+      case 0x15:
+        timer.delayTimer = reg_value
+        break
+
+      case 0x18:
+        timer.soundTimer = reg_value
+        break
+
+      // add to index
+      case 0x1e:
+        this.set_index(this.i_index + reg_value)
+        break
+
+      // get key
+      case 0x0a:
+        // index is basically the keycode we want
+        const pressed_key = display.keyboard.get_pressed_key()
+        if (pressed_key !== undefined) {
+          this.set_register(reg, pressed_key)
+        } else {
+          this.revert_command()
+        }
+        break
+
+      // font character
+      case 0x29:
+        this.set_index(FONTSTART + reg_value * 5)
+        break
+
+      // binary-coded decimal conversion
+      case 0x33:
+        const hundreds = Math.floor(reg_value / 100)
+        const tens = Math.floor((reg_value % 100) / 10)
+        const ones = reg_value  % 10
+
+        this.store_in_memory(this.i_index, hundreds)
+        this.store_in_memory(this.i_index + 1, tens)
+        this.store_in_memory(this.i_index + 2, ones)
+        break
+
+      // store and load memory
+      case 0x55:
+        for (let i = 0; i < reg; i++) {
+          this.store_in_memory(this.i_index + i, this.registers[i])
+        }
+        break
+      case 0x65:
+        for (let i = 0; i < reg; i++) {
+          this.set_register(i, this.memory[this.i_index + i])
+        }
+        break
+    }
+  }
+
+  private store_in_memory(addr: number, value: number) {
+    this.memory[addr] = value
+  }
+}
