@@ -14,7 +14,7 @@ export class Timer {
       this.soundTimer--
 
       this.player.play('beep.mp3', (err) => {
-        console.error("failed to play audio", err)
+        if (err) console.error(err)
       })
 
     }
