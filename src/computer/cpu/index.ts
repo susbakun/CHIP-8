@@ -317,7 +317,7 @@ export class CPU {
         break
 
       case 5:
-        this.subtract_two_registers(x, y)
+        this.subtract_reg2_from_reg1(x, y)
         break
 
       case 6:
@@ -325,7 +325,7 @@ export class CPU {
         break
 
       case 7:
-        this.subtract_two_registers(y, x)
+        this.subtract_reg1_from_reg2(x, y)
         break
 
       case 0xe:
@@ -353,11 +353,22 @@ export class CPU {
     this.set_register(reg1, sum)
   }
 
-  private subtract_two_registers(reg1: number, reg2: number) {
+  private subtract_reg2_from_reg1(reg1: number, reg2: number) {
     const reg1_value = this.registers[reg1]
     const reg2_value = this.registers[reg2]
 
     const sub = reg1_value - reg2_value
+    const flag = sub >= 0 ? 1 : 0
+
+    this.set_register(this.last_register, flag)
+    this.set_register(reg1, sub)
+  }
+
+  private subtract_reg1_from_reg2(reg1: number, reg2: number) {
+    const reg1_value = this.registers[reg1]
+    const reg2_value = this.registers[reg2]
+
+    const sub = reg2_value - reg1_value
     const flag = sub >= 0 ? 1 : 0
 
     this.set_register(this.last_register, flag)
@@ -403,6 +414,7 @@ export class CPU {
   private display_sprite(opcode: number, display: Display) {
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
+
     const n = nDecoder(opcode)
     // handling n = 0 special command
     const height = n === 0 ? 16 : n
@@ -420,7 +432,7 @@ export class CPU {
       const y_coord = (startY + row) % display.height
 
       for (let bc = 0; bc < byte_count; bc++) {
-        const sprite_byte = this.memory[sprite_index]
+        const sprite_byte = this.memory[sprite_index++]
 
         for (let bit = 0; bit < 8; bit++) {
           const index = display.width * y_coord + x_coord
@@ -433,8 +445,6 @@ export class CPU {
 
           x_coord = (x_coord + 1) % display.width
         }
-
-        sprite_index += 1
       }
     }
   }
