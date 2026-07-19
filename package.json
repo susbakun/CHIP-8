@@ -13,11 +13,13 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "@types/play-sound": "^1.1.2",
     "prettier": "^3.9.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@kmamal/sdl": "^0.11.13"
+    "@kmamal/sdl": "^0.11.13",
+    "play-sound": "^1.1.6"
   }
 }
