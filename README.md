@@ -1,41 +1,64 @@
 # CHIP-8 Emulator
 
-A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for the display and keyboard.
+A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for window creation, rendering, and keyboard input.
 
-<img width="752" height="464" alt="Screenshot 2026-07-19 at 3 35 43 AM" src="https://github.com/user-attachments/assets/fa2f404f-4a8f-482e-a9f5-2a104d5c15b4" />
+The emulator supports both the original **CHIP-8** instruction set and **Super-CHIP (SCHIP)** extensions, including high-resolution graphics, scrolling instructions, large fonts, and RPL registers.
 
+<img width="752" height="464" alt="Screenshot 2026-07-19 at 3 35 43 AM" src="https://github.com/user-attachments/assets/fa2f404f-4a8f-482e-a9f5-2a104d5c15b4" />
+
+## Features
+
+* CHIP-8 interpreter
+* Super-CHIP (SCHIP) support
+
+  * 128×64 high-resolution mode
+  * 64×32 low-resolution mode
+  * 16×16 sprites (`DXY0`)
+  * Scrolling instructions (`00CN`, `00FB`, `00FC`)
+  * Large font support (`FX30`)
+  * RPL flag registers (`FX75` / `FX85`)
+* Configurable interpreter quirks
+* 60 Hz delay and sound timers
+* XOR sprite rendering with collision detection
+* Hex keypad input
+* Unit tests with Vitest
 
 ## Requirements
 
-- Node.js 22+ (for native TypeScript / `--watch` support)
+* Node.js 22+
 
-## Setup
+## Installation
 
 ```bash
 npm install
 ```
 
-## Run
+## Running
 
-From the project root:
+Start the emulator:
 
 ```bash
 npm run dev
 ```
 
-By default this loads `roms/ibm.ch8`. Pass a ROM filename as an argument:
+By default, this loads `roms/ibm.ch8`.
+
+To load a different ROM:
 
 ```bash
 npm run dev -- Pong.ch8
 npm run dev -- ibm.ch8
 npm run dev -- test_opcode.ch8
+npm run dev -- sweetcopter.ch8
 ```
 
-ROMs live in the `roms/` folder. Press **Esc** to quit.
+All ROMs should be placed inside the `roms/` directory.
+
+Press **Esc** to exit.
 
 ## Controls
 
-CHIP-8 uses a 16-key hex keypad. Keys map to your keyboard like this:
+CHIP-8 uses a hexadecimal keypad mapped to a standard keyboard:
 
 ```
 CHIP-8          Keyboard
@@ -45,21 +68,40 @@ CHIP-8          Keyboard
 A 0 B F         Z X C V
 ```
 
-## Tests
+## Running Tests
 
 ```bash
 npm test
 ```
 
-## Project layout
+## Project Structure
 
 ```
 src/
-  computer/     CPU, display, keyboard, timers
-  font.ts       Built-in hex digit sprites
-roms/           Game / test ROMs
-test/           Vitest unit tests
+├── computer/
+│   ├── cpu/         CPU implementation and opcode decoding
+│   ├── display.ts   SDL renderer and framebuffer
+│   ├── keyboard.ts  CHIP-8 keypad input
+│   ├── timer.ts     Delay and sound timers
+│   └── index.ts     Emulator entry point
+├── font.ts          Standard and Super-CHIP fonts
+└── types.ts         Shared types
+
+roms/                CHIP-8 and SCHIP ROMs
+test/                Vitest unit tests
 ```
 
-## Resource
-[Guide to making a CHIP-8 emulator](https://tobiasvl.github.io/blog/write-a-chip-8-emulator)
+## Compatibility
+
+The emulator has been tested with several classic ROMs and test suites, including:
+
+* IBM Logo
+* Pong
+* Opcode test ROMs
+* Super-CHIP test ROMs
+* SweetCopter
+
+## References
+
+* [Guide to making a CHIP-8 emulator](https://tobiasvl.github.io/blog/write-a-chip-8-emulator)
+* [Mastering SuperChip](https://johnearnest.github.io/Octo/docs/SuperChip.html)
