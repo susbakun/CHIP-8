@@ -3,6 +3,7 @@ import { CPU } from "./cpu/index.ts"
 import { Display } from "./display.ts"
 import { Timer } from "./timer.ts"
 import path from "path"
+import type { Quirks } from "../types.ts"
 
 export class Computer {
   private cpu_hz = 700
@@ -12,6 +13,11 @@ export class Computer {
   private display = new Display()
   private cpu = new CPU()
   private timer = new Timer()
+  private quirks: Quirks
+
+  constructor(quirks: Quirks) {
+    this.quirks = quirks
+  }
 
   public load_in_memory() {
     this.cpu.load_fonts()
@@ -27,7 +33,7 @@ export class Computer {
     this.load_in_memory()
     // cpu cycle
     setInterval(() => {
-      this.cpu.cycle(this.display, this.timer)
+      this.cpu.cycle(this.display, this.timer, this.quirks)
     }, 1000 / this.cpu_hz)
 
     // timer tick

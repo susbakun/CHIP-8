@@ -8,7 +8,7 @@ import {
 } from "./decoders.ts"
 import type { Display } from "../display.ts"
 import { FONTSET, FONTSTART } from "../../font.ts"
-import type { Instruction } from "../../types.ts"
+import type { Instruction, Quirks } from "../../types.ts"
 import type { Timer } from "../timer.ts"
 
 const MEMORY_START = 0x0200
@@ -43,11 +43,11 @@ export class CPU {
     this.memory.set(FONTSET, FONTSTART)
   }
 
-  public cycle(display: Display, timer: Timer) {
+  public cycle(display: Display, timer: Timer, quirks: Quirks) {
     // first fetch the command
     const opcode = this.fetch()
     // get the corresponding command
-    const instruction = this.decode(opcode, display, timer)
+    const instruction = this.decode(opcode, display, timer, quirks)
     // execute it
     instruction.execute.apply(this, instruction.args)
   }
@@ -63,7 +63,12 @@ export class CPU {
   }
 
   // 2-byte opcode
-  public decode(opcode: number, display: Display, timer: Timer): Instruction {
+  public decode(
+    opcode: number,
+    display: Display,
+    timer: Timer,
+    quirks: Quirks,
+  ): Instruction {
     const first_nibble = firstNibbleDecoder(opcode)
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
@@ -137,7 +142,7 @@ export class CPU {
       case 0x8000:
         return {
           execute: this.execute8,
-          args: [opcode],
+          args: [opcode, quirks],
         }
 
       // set index
@@ -179,7 +184,7 @@ export class CPU {
       case 0xf000:
         return {
           execute: this.executef,
-          args: [opcode, x, display, timer],
+          args: [opcode, x, display, timer, quirks],
         }
         break
 
@@ -237,7 +242,7 @@ export class CPU {
     this.pc -= 2
   }
 
-  private execute8(opcode: number) {
+  private execute8(opcode: number, quirks: Quirks) {
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
     const n = nDecoder(opcode)
@@ -271,7 +276,7 @@ export class CPU {
         break
 
       case 6:
-        this.right_shift_reg_and_store_in_another_reg(x, y)
+        this.right_shift(x, y, quirks)
         break
 
       case 7:
@@ -279,7 +284,7 @@ export class CPU {
         break
 
       case 0xe:
-        this.left_shift_reg_and_store_in_another_reg(x, y)
+        this.left_shift(x, y, quirks)
         break
     }
   }
@@ -310,18 +315,22 @@ export class CPU {
     this.set_register(reg1, sub)
   }
 
-  private right_shift_reg_and_store_in_another_reg(reg1: number, reg2: number) {
-    const reg2_value = this.registers[reg2]
+  private right_shift(reg1: number, reg2: number, quirks: Quirks) {
+    const value = quirks.shift_uses_vy
+      ? this.registers[reg2]
+      : this.registers[reg1]
 
-    this.set_register(reg1, reg2_value >> 1)
-    this.set_register(this.last_register, reg2_value & 0x1)
+    this.set_register(reg1, value >> 1)
+    this.set_register(this.last_register, value & 0x1)
   }
 
-  private left_shift_reg_and_store_in_another_reg(reg1: number, reg2: number) {
-    const reg2_value = this.registers[reg2]
+  private left_shift(reg1: number, reg2: number, quirks: Quirks) {
+    const value = quirks.shift_uses_vy
+      ? this.registers[reg2]
+      : this.registers[reg1]
 
-    this.set_register(reg1, reg2_value << 1)
-    this.set_register(this.last_register, reg2_value >> 7)
+    this.set_register(reg1, value << 1)
+    this.set_register(this.last_register, value >> 7)
   }
 
   private random(opcode: number) {
@@ -400,6 +409,7 @@ export class CPU {
     reg: number,
     display: Display,
     timer: Timer,
+    quirks: Quirks,
   ) {
     const nn = nnDecoder(opcode)
 
@@ -444,7 +454,7 @@ export class CPU {
       case 0x33:
         const hundreds = Math.floor(reg_value / 100)
         const tens = Math.floor((reg_value % 100) / 10)
-        const ones = reg_value  % 10
+        const ones = reg_value % 10
 
         this.store_in_memory(this.i_index, hundreds)
         this.store_in_memory(this.i_index + 1, tens)
@@ -453,14 +463,16 @@ export class CPU {
 
       // store and load memory
       case 0x55:
-        for (let i = 0; i < reg; i++) {
+        for (let i = 0; i <= reg; i++) {
           this.store_in_memory(this.i_index + i, this.registers[i])
         }
+        if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
         break
       case 0x65:
-        for (let i = 0; i < reg; i++) {
+        for (let i = 0; i <= reg; i++) {
           this.set_register(i, this.memory[this.i_index + i])
         }
+        if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
         break
     }
   }
