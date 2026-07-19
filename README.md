@@ -2,6 +2,9 @@
 
 A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for the display and keyboard.
 
+<img width="752" height="464" alt="Screenshot 2026-07-19 at 3 35 43 AM" src="https://github.com/user-attachments/assets/fa2f404f-4a8f-482e-a9f5-2a104d5c15b4" />
+
+
 ## Requirements
 
 - Node.js 22+ (for native TypeScript / `--watch` support)
