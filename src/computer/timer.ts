@@ -1,6 +1,5 @@
 import player from "play-sound"
 
-
 export class Timer {
   public delayTimer = 0
   public soundTimer = 0
@@ -13,10 +12,9 @@ export class Timer {
     if (this.soundTimer > 0) {
       this.soundTimer--
 
-      this.player.play('beep.mp3', (err) => {
-        if (err) console.error(err)
-      })
-
+      // this.player.play("beep.mp3", (err) => {
+      //   if (err) console.error(err)
+      // })
     }
   }
 }

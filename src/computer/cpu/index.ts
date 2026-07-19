@@ -6,8 +6,14 @@ import {
   xDecoder,
   yDecoder,
 } from "./decoders.ts"
-import type { Display } from "../display.ts"
-import { FONTSET, FONTSTART } from "../../font.ts"
+import {
+  CHIP8_HEIGHT,
+  CHIP8_WIDTH,
+  SCHIP_HEIGHT,
+  SCHIP_WIDTH,
+  type Display,
+} from "../display.ts"
+import { BIG_FONTSET, BIGFONTSTART, FONTSET, FONTSTART } from "../../font.ts"
 import type { Instruction, Quirks } from "../../types.ts"
 import type { Timer } from "../timer.ts"
 
@@ -26,8 +32,10 @@ export class CPU {
   private stack = new Uint16Array(0x10)
   // stack pointer
   private sp = -1
-  // last register (used for setting carry flags)
+  // last register (used for setting carry flag)
   private last_register = 15
+  // rpl (reserved for program loading) registers (super-chip)
+  private rpls = new Uint8Array(0x8)
 
   constructor() {
     this.load_fonts()
@@ -41,6 +49,7 @@ export class CPU {
 
   public load_fonts() {
     this.memory.set(FONTSET, FONTSTART)
+    this.memory.set(BIG_FONTSET, BIGFONTSTART)
   }
 
   public cycle(display: Display, timer: Timer, quirks: Quirks) {
@@ -199,16 +208,52 @@ export class CPU {
 
   // execute
   private execute0(opcode: number, display: Display) {
-    const nnn = nnnDecoder(opcode)
+    const n = nDecoder(opcode)
+    const nn = nnDecoder(opcode)
 
-    switch (nnn) {
+    switch (nn) {
       //clear display
-      case 0x00e0:
+      case 0xe0:
         display.clear()
         break
+
       //ret
-      case 0x00ee:
+      case 0xee:
         this.ret()
+        break
+
+      // exit
+      case 0xfd:
+        process.exit(0)
+
+      // halting the program
+      case 0x00:
+        this.revert_command()
+        break
+
+      // scroll down
+      case 0xc0 + n:
+        display.scroll_down(n)
+        break
+
+      // scroll right
+      case 0xfb:
+        display.scroll_right()
+        break
+
+      // scroll left
+      case 0xfc:
+        display.scroll_left()
+        break
+
+      // hires
+      case 0xff:
+        display.change_res(SCHIP_WIDTH, SCHIP_HEIGHT)
+        break
+
+      // lores
+      case 0xfe:
+        display.change_res(CHIP8_WIDTH, CHIP8_HEIGHT)
         break
     }
   }
@@ -293,6 +338,10 @@ export class CPU {
     this.registers[reg] = value
   }
 
+  private set_rpl(reg: number, value: number) {
+    this.rpls[reg] = value
+  }
+
   private add_two_registers(reg1: number, reg2: number) {
     const reg1_value = this.registers[reg1]
     const reg2_value = this.registers[reg2]
@@ -355,34 +404,37 @@ export class CPU {
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
     const n = nDecoder(opcode)
+    // handling n = 0 special command
+    const height = n === 0 ? 16 : n
+    const byte_count = n === 0 ? 2 : 1
 
     const startX = this.registers[x] % display.width
     const startY = this.registers[y] % display.height
 
     this.set_register(this.last_register, 0)
 
-    for (let row = 0; row < n; row++) {
+    let sprite_index = this.i_index
+
+    for (let row = 0; row < height; row++) {
       let x_coord = startX
-      const y_coord = startY + row
+      const y_coord = (startY + row) % display.height
 
-      // reached bottom?
-      if (y_coord >= display.height) break
+      for (let bc = 0; bc < byte_count; bc++) {
+        const sprite_byte = this.memory[sprite_index]
 
-      const sprite_byte = this.memory[this.i_index + row]
+        for (let bit = 0; bit < 8; bit++) {
+          const index = display.width * y_coord + x_coord
+          const color_bit = (sprite_byte >> (7 - bit)) & 0x1
 
-      for (let bit = 0; bit < 8; bit++) {
-        // reached right edge?
-        if (x_coord >= display.width) break
+          if (display.pixels[index] === 1 && color_bit === 1)
+            this.set_register(this.last_register, 1)
 
-        const index = display.width * y_coord + x_coord
-        const color_bit = (sprite_byte >> (7 - bit)) & 0x1
+          display.write_to_pixels(index, color_bit)
 
-        if (display.pixels[index] === 1 && color_bit === 1)
-          this.set_register(this.last_register, 1)
+          x_coord = (x_coord + 1) % display.width
+        }
 
-        display.write_to_pixels(index, color_bit)
-
-        x_coord++
+        sprite_index += 1
       }
     }
   }
@@ -450,6 +502,11 @@ export class CPU {
         this.set_index(FONTSTART + reg_value * 5)
         break
 
+      // large font character
+      case 0x30:
+        this.set_index(BIGFONTSTART + reg_value * 10)
+        break
+
       // binary-coded decimal conversion
       case 0x33:
         const hundreds = Math.floor(reg_value / 100)
@@ -461,18 +518,34 @@ export class CPU {
         this.store_in_memory(this.i_index + 2, ones)
         break
 
-      // store and load memory
+      // store in memory
       case 0x55:
         for (let i = 0; i <= reg; i++) {
           this.store_in_memory(this.i_index + i, this.registers[i])
         }
         if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
         break
+
+      // load from memory
       case 0x65:
         for (let i = 0; i <= reg; i++) {
           this.set_register(i, this.memory[this.i_index + i])
         }
         if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
+        break
+
+      // save flags
+      case 0x75:
+        for (let i = 0; i <= reg; i++) {
+          this.set_rpl(i, this.registers[i])
+        }
+        break
+
+      // load flags
+      case 0x85:
+        for (let i = 0; i <= reg; i++) {
+          this.set_register(i, this.rpls[i])
+        }
         break
     }
   }
