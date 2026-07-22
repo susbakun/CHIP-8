@@ -21,3 +21,8 @@ export function nnDecoder(opcode: number) {
 export function nnnDecoder(opcode: number) {
   return opcode & 0xfff
 }
+
+// nnnn is literally opcode
+export function nnnnDecoder(opcode: number) {
+  return opcode
+}

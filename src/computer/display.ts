@@ -1,5 +1,7 @@
 import sdl from "@kmamal/sdl"
 import { Keyboard } from "./keyboard.ts"
+import { BLACK, RED, WHITE, YELLOW } from "../colors.ts"
+import type { ScrollDirection } from "../types.ts"
 
 export const CHIP8_WIDTH = 64
 export const CHIP8_HEIGHT = 32
@@ -11,8 +13,17 @@ const SCALE = 10
 export class Display {
   public width = CHIP8_WIDTH
   public height = CHIP8_HEIGHT
-  public pixels = Buffer.alloc(this.width * this.height)
   public window: sdl.Sdl.Video.Window
+  //planes for xo-chip
+  public planes = [
+    // plane 1
+    Buffer.alloc(this.width * this.height),
+    // plane 2
+    Buffer.alloc(this.width * this.height),
+  ]
+
+  // 1 is plane 1, 2 is plane 2, 3 is both, 0 is neither
+  public current_plane = 1
 
   public keyboard = new Keyboard()
 
@@ -36,15 +47,16 @@ export class Display {
     this.width = width
     this.height = height
 
-    this.pixels = Buffer.alloc(width * height)
+    this.planes = [Buffer.alloc(width * height), Buffer.alloc(width * height)]
 
     this.window.setSize(width * SCALE, height * SCALE)
 
-    // clearing framebuffer after resizing
-    this.clear()
-
     // recenter the window after resizing
     this.recenter_window()
+  }
+
+  public set_current_plane(selected_plane: number) {
+    this.current_plane = selected_plane
   }
 
   private recenter_window() {
@@ -56,66 +68,129 @@ export class Display {
     this.window.setPosition(new_x, new_y)
   }
 
-  public scroll_down(n: number) {
+  public scroll(n: number, direction: ScrollDirection) {
+    if (this.current_plane === 0) return
+
+    switch (direction) {
+      case "Up":
+        // do for both planes
+        if (this.current_plane === 3) {
+          this.scroll_up(n, 0)
+          this.scroll_up(n, 1)
+        } else {
+          this.scroll_up(n, this.current_plane - 1)
+        }
+        break
+      case "Down":
+        // do for both planes
+        if (this.current_plane === 3) {
+          this.scroll_down(n, 0)
+          this.scroll_down(n, 1)
+        } else {
+          this.scroll_down(n, this.current_plane - 1)
+        }
+        break
+      case "Left":
+        // do for both planes
+        if (this.current_plane === 3) {
+          this.scroll_left(0)
+          this.scroll_left(1)
+        } else {
+          this.scroll_left(this.current_plane - 1)
+        }
+        break
+      case "Right":
+        // do for both planes
+        if (this.current_plane === 3) {
+          this.scroll_right(0)
+          this.scroll_right(1)
+        } else {
+          this.scroll_right(this.current_plane - 1)
+        }
+        break
+    }
+  }
+
+  private scroll_up(n: number, plane: number) {
+    const new_pixels = Buffer.alloc(this.width * this.height)
+
+    for (let row = n; row < this.height; row++) {
+      for (let col = 0; col < this.width; col++) {
+        new_pixels[(row - n) * this.width + col] =
+          this.planes[plane][row * this.width + col]
+      }
+    }
+
+    this.planes[plane] = new_pixels
+  }
+
+  private scroll_down(n: number, plane: number) {
     const new_pixels = Buffer.alloc(this.width * this.height)
 
     for (let row = n; row < this.height; row++) {
       for (let col = 0; col < this.width; col++) {
         new_pixels[row * this.width + col] =
-          this.pixels[(row - n) * this.width + col]
+          this.planes[plane][(row - n) * this.width + col]
       }
     }
 
-    this.pixels = new_pixels
+    this.planes[plane] = new_pixels
   }
 
-  public scroll_right() {
+  private scroll_right(plane: number) {
     const new_pixels = Buffer.alloc(this.width * this.height)
 
     for (let row = 0; row < this.height; row++) {
       for (let col = 4; col < this.width; col++) {
         new_pixels[row * this.width + col] =
-          this.pixels[row * this.width + col - 4]
+          this.planes[plane][row * this.width + col - 4]
       }
     }
 
-    this.pixels = new_pixels
+    this.planes[plane] = new_pixels
   }
 
-  public scroll_left() {
+  private scroll_left(plane: number) {
     const new_pixels = Buffer.alloc(this.width * this.height)
 
     for (let row = 0; row < this.height; row++) {
       for (let col = 4; col < this.width; col++) {
         new_pixels[row * this.width + col - 4] =
-          this.pixels[row * this.width + col]
+          this.planes[plane][row * this.width + col]
       }
     }
 
-    this.pixels = new_pixels
+    this.planes[plane] = new_pixels
   }
 
   // colors or either 0 or 1 (black or white)
-  public write_to_pixels(index: number, color: number) {
-    this.pixels[index] ^= color
+  public xor_color_with_pixel(plane: number, index: number, color: number) {
+    this.planes[plane][index] ^= color
   }
 
-  public clear() {
-    this.pixels.fill(0)
-    this.render()
+  public clear(plane: number) {
+    if (this.current_plane === 0) return
+
+    this.planes[plane].fill(0)
   }
 
   private get_frame_buffer() {
     const framebuffer = Buffer.alloc(this.width * this.height * 3)
 
+    const n = this.width * this.height
+
     let j = 0
 
-    for (let i = 0; i < this.pixels.length; i++) {
-      const c = this.pixels[i] ? 255 : 0
+    for (let i = 0; i < n; i++) {
+      const c1 = this.planes[0][i] ? 255 : 0
+      const c2 = this.planes[1][i] ? 255 : 0
 
-      framebuffer[j++] = c
-      framebuffer[j++] = c
-      framebuffer[j++] = c
+      const color =
+        c1 == 0 ? (c2 == 0 ? BLACK : RED) : c2 === 0 ? WHITE : YELLOW
+
+      framebuffer[j++] = color.r
+      framebuffer[j++] = color.g
+      framebuffer[j++] = color.b
     }
 
     return framebuffer

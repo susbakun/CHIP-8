@@ -3,6 +3,7 @@ import {
   nDecoder,
   nnDecoder,
   nnnDecoder,
+  nnnnDecoder,
   xDecoder,
   yDecoder,
 } from "./decoders.ts"
@@ -16,8 +17,11 @@ import {
 import { BIG_FONTSET, BIGFONTSTART, FONTSET, FONTSTART } from "../../font.ts"
 import type { Instruction, Quirks } from "../../types.ts"
 import type { Timer } from "../timer.ts"
+import type { Audio } from "../audio.ts"
 
 const MEMORY_START = 0x0200
+
+type MemType = "Main" | "Register"
 
 export class CPU {
   // 4096 bytes of RAM
@@ -34,7 +38,7 @@ export class CPU {
   private sp = -1
   // last register (used for setting carry flag)
   private last_register = 15
-  // rpl (reserved for program loading) registers (super-chip)
+  // 8 (on SCHIP) | 16 (on XO-CHIP) * 8-but rpl (reserved for program loading) registers (super-chip)
   private rpls = new Uint8Array(0x8)
 
   constructor() {
@@ -52,11 +56,11 @@ export class CPU {
     this.memory.set(BIG_FONTSET, BIGFONTSTART)
   }
 
-  public cycle(display: Display, timer: Timer, quirks: Quirks) {
+  public cycle(display: Display, timer: Timer, audio: Audio, quirks: Quirks) {
     // first fetch the command
     const opcode = this.fetch()
     // get the corresponding command
-    const instruction = this.decode(opcode, display, timer, quirks)
+    const instruction = this.decode(opcode, display, timer, audio, quirks)
     // execute it
     instruction.execute.apply(this, instruction.args)
   }
@@ -71,11 +75,19 @@ export class CPU {
     return (chunk1 << 8) + chunk2
   }
 
+  private fetch_wo_changing_pc(): number {
+    const chunk1 = this.memory[this.pc]
+    const chunk2 = this.memory[this.pc + 1]
+
+    return (chunk1 << 8) + chunk2
+  }
+
   // 2-byte opcode
   public decode(
     opcode: number,
     display: Display,
     timer: Timer,
+    audio: Audio,
     quirks: Quirks,
   ): Instruction {
     const first_nibble = firstNibbleDecoder(opcode)
@@ -123,8 +135,8 @@ export class CPU {
 
       case 0x5000:
         return {
-          execute: this.skip_on_condition,
-          args: [rx_value === ry_value],
+          execute: this.execute5,
+          args: [opcode, quirks],
         }
 
       case 0x9000:
@@ -193,7 +205,7 @@ export class CPU {
       case 0xf000:
         return {
           execute: this.executef,
-          args: [opcode, x, display, timer, quirks],
+          args: [opcode, display, timer, audio, quirks],
         }
         break
 
@@ -214,7 +226,7 @@ export class CPU {
     switch (nn) {
       //clear display
       case 0xe0:
-        display.clear()
+        this.clear_display(display)
         break
 
       //ret
@@ -231,19 +243,24 @@ export class CPU {
         this.revert_command()
         break
 
+      // scroll up
+      case 0xd0 + n:
+        display.scroll(n, "Up")
+        break
+
       // scroll down
       case 0xc0 + n:
-        display.scroll_down(n)
+        display.scroll(n, "Down")
         break
 
       // scroll right
       case 0xfb:
-        display.scroll_right()
+        display.scroll(4, "Right")
         break
 
       // scroll left
       case 0xfc:
-        display.scroll_left()
+        display.scroll(4, "Left")
         break
 
       // hires
@@ -258,12 +275,25 @@ export class CPU {
     }
   }
 
+  private clear_display(display: Display) {
+    if (display.current_plane == 0) return
+
+    if (display.current_plane === 3) {
+      display.clear(0)
+      display.clear(1)
+    } else {
+      display.clear(display.current_plane - 1)
+    }
+  }
+
   private jump(addr: number) {
     this.pc = addr
   }
 
   private call(addr: number) {
     this.sp++
+    if (this.sp > 0xffff) throw new Error("stack overflow")
+
     this.stack[this.sp] = this.pc
     this.jump(addr)
   }
@@ -271,6 +301,29 @@ export class CPU {
   private ret() {
     this.jump(this.stack[this.sp])
     this.sp--
+
+    if (this.sp < -1) throw new Error("stack underflow")
+  }
+
+  private execute5(opcode: number, quirks: Quirks) {
+    const n = nDecoder(opcode)
+    const x = xDecoder(opcode)
+    const y = yDecoder(opcode)
+
+    let rx_value = this.registers[x]
+    let ry_value = this.registers[y]
+
+    switch (n) {
+      case 0:
+        this.skip_on_condition(rx_value === ry_value)
+        break
+      case 2:
+        this.save_to(x, y, "Main", quirks)
+        break
+      case 3:
+        this.load_to(x, y, "Main", quirks)
+        break
+    }
   }
 
   private skip_on_condition(condition: boolean) {
@@ -280,7 +333,13 @@ export class CPU {
   }
 
   private skip_command() {
-    this.pc += 2
+    const next_command = this.fetch_wo_changing_pc()
+
+    if (next_command === 0xf000) {
+      this.pc += 4
+    } else {
+      this.pc += 2
+    }
   }
 
   private revert_command() {
@@ -412,6 +471,8 @@ export class CPU {
   }
 
   private display_sprite(opcode: number, display: Display) {
+    if (display.current_plane === 0) return
+
     const x = xDecoder(opcode)
     const y = yDecoder(opcode)
 
@@ -420,16 +481,60 @@ export class CPU {
     const height = n === 0 ? 16 : n
     const byte_count = n === 0 ? 2 : 1
 
-    const startX = this.registers[x] % display.width
-    const startY = this.registers[y] % display.height
+    const start_x = this.registers[x] % display.width
+    const start_y = this.registers[y] % display.height
 
     this.set_register(this.last_register, 0)
 
-    let sprite_index = this.i_index
+    // draw to both
+    if (display.current_plane === 3) {
+      const bytes = height * byte_count
+
+      this.draw_plane(
+        0,
+        display,
+        this.i_index,
+        height,
+        byte_count,
+        start_x,
+        start_y,
+      )
+      this.draw_plane(
+        1,
+        display,
+        this.i_index + bytes,
+        height,
+        byte_count,
+        start_x,
+        start_y,
+      )
+    } else {
+      this.draw_plane(
+        display.current_plane - 1,
+        display,
+        this.i_index,
+        height,
+        byte_count,
+        start_x,
+        start_y,
+      )
+    }
+  }
+
+  private draw_plane(
+    plane: number,
+    display: Display,
+    sprite_index_start: number,
+    height: number,
+    byte_count: number,
+    start_x: number,
+    start_y: number,
+  ) {
+    let sprite_index = sprite_index_start
 
     for (let row = 0; row < height; row++) {
-      let x_coord = startX
-      const y_coord = (startY + row) % display.height
+      let x_coord = start_x
+      const y_coord = (start_y + row) % display.height
 
       for (let bc = 0; bc < byte_count; bc++) {
         const sprite_byte = this.memory[sprite_index++]
@@ -438,10 +543,10 @@ export class CPU {
           const index = display.width * y_coord + x_coord
           const color_bit = (sprite_byte >> (7 - bit)) & 0x1
 
-          if (display.pixels[index] === 1 && color_bit === 1)
+          if (display.planes[plane][index] === 1 && color_bit === 1)
             this.set_register(this.last_register, 1)
 
-          display.write_to_pixels(index, color_bit)
+          display.xor_color_with_pixel(plane, index, color_bit)
 
           x_coord = (x_coord + 1) % display.width
         }
@@ -468,32 +573,64 @@ export class CPU {
 
   private executef(
     opcode: number,
-    reg: number,
     display: Display,
     timer: Timer,
+    audio: Audio,
     quirks: Quirks,
   ) {
     const nn = nnDecoder(opcode)
+    const x = xDecoder(opcode)
 
-    const reg_value = this.registers[reg]
+    const rx_value = this.registers[x]
 
     switch (nn) {
+      // set 16-bit number to the i
+      case 0x00:
+        // fetching the next command which should be (0xNNNN)
+        const nnnn = nnnnDecoder(this.fetch())
+        this.set_index(nnnn)
+        break
+
+      // select plane
+      case 0x01:
+        display.set_current_plane(x)
+        break
+
+      // load audio pattern from memory
+      case 0x02:
+        for (let i = 0; i < 16; i++) {
+          audio.pattern[i] = this.memory[this.i_index + i]
+        }
+        break
+
+      // set pitch
+      case 0x3a:
+        audio.set_pitch(rx_value)
+        break
+
       // timers
       case 0x07:
-        this.set_register(reg, timer.delayTimer)
+        this.set_register(x, timer.delayTimer)
         break
 
       case 0x15:
-        timer.delayTimer = reg_value
+        timer.delayTimer = rx_value
         break
 
       case 0x18:
-        timer.soundTimer = reg_value
+        timer.soundTimer = rx_value
+
+        if (rx_value > 0) {
+          audio.play()
+        } else {
+          audio.stop()
+        }
+
         break
 
       // add to index
       case 0x1e:
-        this.set_index(this.i_index + reg_value)
+        this.set_index(this.i_index + rx_value)
         break
 
       // get key
@@ -501,7 +638,7 @@ export class CPU {
         // index is basically the keycode we want
         const pressed_key = display.keyboard.get_pressed_key()
         if (pressed_key !== undefined) {
-          this.set_register(reg, pressed_key)
+          this.set_register(x, pressed_key)
         } else {
           this.revert_command()
         }
@@ -509,54 +646,70 @@ export class CPU {
 
       // font character
       case 0x29:
-        this.set_index(FONTSTART + reg_value * 5)
+        this.set_index(FONTSTART + rx_value * 5)
         break
 
       // large font character
       case 0x30:
-        this.set_index(BIGFONTSTART + reg_value * 10)
+        this.set_index(BIGFONTSTART + rx_value * 10)
         break
 
       // binary-coded decimal conversion
       case 0x33:
-        const hundreds = Math.floor(reg_value / 100)
-        const tens = Math.floor((reg_value % 100) / 10)
-        const ones = reg_value % 10
+        const hundreds = Math.floor(rx_value / 100)
+        const tens = Math.floor((rx_value % 100) / 10)
+        const ones = rx_value % 10
 
         this.store_in_memory(this.i_index, hundreds)
         this.store_in_memory(this.i_index + 1, tens)
         this.store_in_memory(this.i_index + 2, ones)
         break
 
-      // store in memory
+      // store to memory
       case 0x55:
-        for (let i = 0; i <= reg; i++) {
-          this.store_in_memory(this.i_index + i, this.registers[i])
-        }
-        if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
+        this.save_to(0, x, "Main", quirks)
         break
 
       // load from memory
       case 0x65:
-        for (let i = 0; i <= reg; i++) {
-          this.set_register(i, this.memory[this.i_index + i])
-        }
-        if (quirks.increment_i) this.set_index(this.i_index + reg + 1)
+        this.load_to(0, x, "Main", quirks)
         break
 
       // save flags
       case 0x75:
-        for (let i = 0; i <= reg; i++) {
-          this.set_rpl(i, this.registers[i])
-        }
+        this.save_to(0, x, "Register", quirks)
         break
 
       // load flags
       case 0x85:
-        for (let i = 0; i <= reg; i++) {
-          this.set_register(i, this.rpls[i])
-        }
+        this.load_to(0, x, "Register", quirks)
         break
+    }
+  }
+
+  private save_to(start: number, end: number, to: MemType, quirks: Quirks) {
+    if (to === "Register") {
+      for (let i = 0; i <= end; i++) {
+        this.set_rpl(i, this.registers[i])
+      }
+    } else {
+      for (let i = start; i <= end; i++) {
+        this.store_in_memory(this.i_index + i, this.registers[i])
+      }
+      if (quirks.increment_i) this.set_index(this.i_index + (end - start) + 1)
+    }
+  }
+
+  private load_to(start: number, end: number, from: MemType, quirks: Quirks) {
+    if (from === "Register") {
+      for (let i = start; i <= end; i++) {
+        this.set_register(i, this.rpls[i])
+      }
+    } else {
+      for (let i = start; i <= end; i++) {
+        this.set_register(i, this.memory[this.i_index + i])
+      }
+      if (quirks.increment_i) this.set_index(this.i_index + (end - start) + 1)
     }
   }
 
