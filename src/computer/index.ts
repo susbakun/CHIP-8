@@ -7,8 +7,7 @@ import type { Quirks } from "../types.ts"
 import { Audio } from "./audio.ts"
 
 export class Computer {
-  private cpu_hz = 700
-  private timer_hz = 60
+  private cpu_hz = 1000
   private display_hz = 60
 
   private display = new Display()
@@ -39,16 +38,10 @@ export class Computer {
     this.setup()
     // cpu cycle
     setInterval(() => {
-      this.cpu.cycle(this.display, this.timer, this.audio, this.quirks)
-    }, 1000 / this.cpu_hz)
-
-    // timer tick
-    setInterval(() => {
+      for (let i = 0; i < this.cpu_hz; i++) {
+        this.cpu.cycle(this.display, this.timer, this.audio, this.quirks)
+      }
       this.timer.tick(this.audio)
-    }, 1000 / this.timer_hz)
-
-    // display rendering
-    setInterval(() => {
       this.display.render()
     }, 1000 / this.display_hz)
   }

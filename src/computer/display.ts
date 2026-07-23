@@ -22,7 +22,7 @@ export class Display {
     Buffer.alloc(this.width * this.height),
   ]
 
-  // 1 is plane 1, 2 is plane 2, 3 is both, 0 is neither
+  // 0 is neither, 1 is plane 1, 2 is plane 2 and 3 is both
   public current_plane = 1
 
   public keyboard = new Keyboard()
@@ -182,8 +182,8 @@ export class Display {
     let j = 0
 
     for (let i = 0; i < n; i++) {
-      const c1 = this.planes[0][i] ? 255 : 0
-      const c2 = this.planes[1][i] ? 255 : 0
+      const c1 = this.planes[0][i]
+      const c2 = this.planes[1][i]
 
       const color =
         c1 == 0 ? (c2 == 0 ? BLACK : RED) : c2 === 0 ? WHITE : YELLOW

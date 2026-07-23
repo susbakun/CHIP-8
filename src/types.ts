@@ -11,7 +11,8 @@ export type Instruction = {
 
 export type Quirks = {
   increment_i: boolean
-  shift_uses_vy: boolean
+  shift_uses_vy: boolean,
+  clip: boolean
 }
 
 export type ScrollDirection = "Up" | "Down" | "Left" | "Right"

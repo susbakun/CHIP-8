@@ -7,6 +7,8 @@ export class Keyboard {
   private keys = new Array<boolean>(16).fill(false)
   private keys_map: Map<string, number> = new Map()
 
+  private last_pressed_key = -1
+
   constructor() {
     // mapping the sdl key codes to chip-8 ones
     this.keys_map.set("1", 0x1)
@@ -33,8 +35,9 @@ export class Keyboard {
       if (event.key === "escape") process.exit(0)
 
       const chip8_key = this.keys_map.get(event.key)
-      if (chip8_key) {
+      if (chip8_key !== undefined) {
         this.keys[chip8_key] = true
+        this.last_pressed_key = chip8_key
       }
     }
   }
@@ -49,10 +52,12 @@ export class Keyboard {
   }
 
   public get_pressed_key() {
-    return this.keys.findIndex((pressed) => pressed === true)
+    const key = this.last_pressed_key
+    this.last_pressed_key = -1
+    return key
   }
 
   public is_key_pressed(keycode: number): boolean {
-    return this.keys[keycode]
+    return this.keys[keycode] ?? false
   }
 }

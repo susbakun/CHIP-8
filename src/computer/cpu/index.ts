@@ -19,27 +19,27 @@ import type { Instruction, Quirks } from "../../types.ts"
 import type { Timer } from "../timer.ts"
 import type { Audio } from "../audio.ts"
 
-const MEMORY_START = 0x0200
+const MEMORY_START = 0x200
 
 type MemType = "Main" | "Register"
 
 export class CPU {
-  // 4096 bytes of RAM
-  private memory = new Uint8Array(0x1000)
+  // 64 kilo bytes of RAM
+  private memory = new Uint8Array(0x10000)
   // 16 bit program counter (which starts at 0x200 due to chip8 interpreter taking up the first 512 bytes)
   private pc = MEMORY_START
-  // 16 x 8-bit data registers named V0 to VF
+  // 16 * 8-bit data registers named V0 to VF
   public registers = new Uint8Array(0x10)
   // 16-bit register called I, This register is generally used to store memory addresses.
   private i_index = 0x0
-  // 16 x 16-bit values for the stack
+  // 16 * 16-bit values for the stack
   private stack = new Uint16Array(0x10)
   // stack pointer
   private sp = -1
   // last register (used for setting carry flag)
   private last_register = 15
-  // 8 (on SCHIP) | 16 (on XO-CHIP) * 8-but rpl (reserved for program loading) registers (super-chip)
-  private rpls = new Uint8Array(0x8)
+  // 8 (on SCHIP) | 16 (on XO-CHIP) * 8-bit rpl (reserved for program loading) registers (super-chip)
+  private rpls = new Uint8Array(0x10)
 
   constructor() {
     this.load_fonts()
@@ -191,7 +191,7 @@ export class CPU {
       case 0xd000:
         return {
           execute: this.display_sprite,
-          args: [opcode, display],
+          args: [opcode, display, quirks],
         }
 
       // skip if key
@@ -209,12 +209,11 @@ export class CPU {
         }
         break
 
-      // skip the command if it was unknown
+      // throw error when command was unknown
       default:
-        return {
-          execute: this.skip_command,
-          args: [],
-        }
+        throw new Error(
+          `Unknown opcode ${opcode.toString(16)} at ${this.pc.toString(16)}`,
+        )
     }
   }
 
@@ -292,7 +291,7 @@ export class CPU {
 
   private call(addr: number) {
     this.sp++
-    if (this.sp > 0xffff) throw new Error("stack overflow")
+    if (this.sp >= this.stack.length) throw new Error("stack overflow")
 
     this.stack[this.sp] = this.pc
     this.jump(addr)
@@ -470,7 +469,7 @@ export class CPU {
     this.i_index = addr
   }
 
-  private display_sprite(opcode: number, display: Display) {
+  private display_sprite(opcode: number, display: Display, quirks: Quirks) {
     if (display.current_plane === 0) return
 
     const x = xDecoder(opcode)
@@ -498,6 +497,7 @@ export class CPU {
         byte_count,
         start_x,
         start_y,
+        quirks,
       )
       this.draw_plane(
         1,
@@ -507,6 +507,7 @@ export class CPU {
         byte_count,
         start_x,
         start_y,
+        quirks,
       )
     } else {
       this.draw_plane(
@@ -517,6 +518,7 @@ export class CPU {
         byte_count,
         start_x,
         start_y,
+        quirks,
       )
     }
   }
@@ -529,26 +531,33 @@ export class CPU {
     byte_count: number,
     start_x: number,
     start_y: number,
+    quirks: Quirks,
   ) {
     let sprite_index = sprite_index_start
 
     for (let row = 0; row < height; row++) {
-      let x_coord = start_x
-      const y_coord = (start_y + row) % display.height
+      const y_coord = start_y + row
+      if (quirks.clip && y_coord >= display.height) {
+        sprite_index += byte_count // keep byte alignment for later rows
+        continue
+      }
 
       for (let bc = 0; bc < byte_count; bc++) {
         const sprite_byte = this.memory[sprite_index++]
 
         for (let bit = 0; bit < 8; bit++) {
-          const index = display.width * y_coord + x_coord
+          const x_coord = start_x + bc * 8 + bit
+          if (quirks.clip && x_coord >= display.width) continue
+
+          const index =
+            display.width * (y_coord % display.height) +
+            (x_coord % display.width)
           const color_bit = (sprite_byte >> (7 - bit)) & 0x1
 
           if (display.planes[plane][index] === 1 && color_bit === 1)
             this.set_register(this.last_register, 1)
 
           display.xor_color_with_pixel(plane, index, color_bit)
-
-          x_coord = (x_coord + 1) % display.width
         }
       }
     }
@@ -635,9 +644,8 @@ export class CPU {
 
       // get key
       case 0x0a:
-        // index is basically the keycode we want
         const pressed_key = display.keyboard.get_pressed_key()
-        if (pressed_key !== undefined) {
+        if (pressed_key >= 0) {
           this.set_register(x, pressed_key)
         } else {
           this.revert_command()
@@ -687,29 +695,49 @@ export class CPU {
     }
   }
 
-  private save_to(start: number, end: number, to: MemType, quirks: Quirks) {
+  private save_to(x: number, y: number, to: MemType, quirks: Quirks) {
+    const start = Math.min(x, y)
+    const end = Math.max(x, y)
+
     if (to === "Register") {
-      for (let i = 0; i <= end; i++) {
+      for (let i = start; i <= end; i++) {
         this.set_rpl(i, this.registers[i])
       }
     } else {
+      let offset = 0
+
       for (let i = start; i <= end; i++) {
-        this.store_in_memory(this.i_index + i, this.registers[i])
+        this.store_in_memory(this.i_index + offset, this.registers[i])
+
+        offset++
       }
-      if (quirks.increment_i) this.set_index(this.i_index + (end - start) + 1)
+
+      if (quirks.increment_i) {
+        this.set_index(this.i_index + offset)
+      }
     }
   }
 
-  private load_to(start: number, end: number, from: MemType, quirks: Quirks) {
+  private load_to(x: number, y: number, from: MemType, quirks: Quirks) {
+    const start = Math.min(x, y)
+    const end = Math.max(x, y)
+
     if (from === "Register") {
       for (let i = start; i <= end; i++) {
         this.set_register(i, this.rpls[i])
       }
     } else {
+      let offset = 0
+
       for (let i = start; i <= end; i++) {
-        this.set_register(i, this.memory[this.i_index + i])
+        this.set_register(i, this.memory[this.i_index + offset])
+
+        offset++
       }
-      if (quirks.increment_i) this.set_index(this.i_index + (end - start) + 1)
+
+      if (quirks.increment_i) {
+        this.set_index(this.i_index + offset)
+      }
     }
   }
 
