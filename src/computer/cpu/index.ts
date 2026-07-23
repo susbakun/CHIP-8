@@ -696,20 +696,24 @@ export class CPU {
   }
 
   private save_to(x: number, y: number, to: MemType, quirks: Quirks) {
-    const start = Math.min(x, y)
-    const end = Math.max(x, y)
+    const step = x <= y ? 1 : -1
+    const end = x <= y ? y + 1 : y - 1
+
+    let i = x
 
     if (to === "Register") {
-      for (let i = start; i <= end; i++) {
+      while (i != end) {
         this.set_rpl(i, this.registers[i])
+        i += step
       }
     } else {
       let offset = 0
 
-      for (let i = start; i <= end; i++) {
+      while (i != end) {
         this.store_in_memory(this.i_index + offset, this.registers[i])
 
         offset++
+        i += step
       }
 
       if (quirks.increment_i) {
@@ -719,20 +723,24 @@ export class CPU {
   }
 
   private load_to(x: number, y: number, from: MemType, quirks: Quirks) {
-    const start = Math.min(x, y)
-    const end = Math.max(x, y)
+    const step = x <= y ? 1 : -1
+    const end = x <= y ? y + 1 : y - 1
+
+    let i = x
 
     if (from === "Register") {
-      for (let i = start; i <= end; i++) {
+      while (i != end) {
         this.set_register(i, this.rpls[i])
+        i += step
       }
     } else {
       let offset = 0
 
-      for (let i = start; i <= end; i++) {
+      while (i != end) {
         this.set_register(i, this.memory[this.i_index + offset])
 
         offset++
+        i += step
       }
 
       if (quirks.increment_i) {

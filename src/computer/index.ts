@@ -36,7 +36,7 @@ export class Computer {
 
   public run() {
     this.setup()
-    // cpu cycle
+
     setInterval(() => {
       for (let i = 0; i < this.cpu_hz; i++) {
         this.cpu.cycle(this.display, this.timer, this.audio, this.quirks)
