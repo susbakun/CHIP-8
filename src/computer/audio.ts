@@ -41,13 +41,18 @@ export class Audio {
   private next_sample() {
     if (!this.playing) return 0
 
-    const sample = Math.sin(this.phase * Math.PI * 2)
+    const byte = this.pattern[this.bit_index >> 3]
+
+    const bit = (byte >> (7 - (this.bit_index & 7))) & 1
 
     this.phase += this.pitch / SAMPLE_RATE
 
-    if (this.phase >= 1) this.phase -= 1
+    if (this.phase >= 1) {
+      this.phase--
+      this.bit_index = (this.bit_index + 1) & 127
+    }
 
-    return sample * 8000
+    return bit ? 8000 : -8000
   }
 
   public play() {
