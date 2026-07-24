@@ -1,6 +1,6 @@
 import sdl from "@kmamal/sdl"
 import { Keyboard } from "./keyboard.ts"
-import { BLACK, RED, WHITE, YELLOW } from "../colors.ts"
+import { BLACK, GREEN, RED, WHITE, YELLOW } from "../colors.ts"
 import type { ScrollDirection } from "../types.ts"
 
 export const CHIP8_WIDTH = 64
@@ -186,7 +186,7 @@ export class Display {
       const c2 = this.planes[1][i]
 
       const color =
-        c1 == 0 ? (c2 == 0 ? BLACK : RED) : c2 === 0 ? WHITE : YELLOW
+        c1 == 0 ? (c2 == 0 ? BLACK : GREEN) : c2 === 0 ? WHITE : YELLOW
 
       framebuffer[j++] = color.r
       framebuffer[j++] = color.g

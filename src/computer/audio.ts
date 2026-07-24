@@ -1,34 +1,32 @@
-import Speaker from "speaker"
-import { Readable } from "stream"
+import sdl from "@kmamal/sdl"
 
 const SAMPLE_RATE = 48000
 
 export class Audio {
-  private speaker = new Speaker({
-    channels: 1,
-    bitDepth: 16,
-    sampleRate: SAMPLE_RATE,
-  })
-
-  // 16 * 8-bit
   public pattern = new Uint8Array(0x10)
+
   private pitch = 4000
   public bit_index = 0
-  public phase = 0
-
   private playing = false
+  public phase = 0
 
   private readonly BUFFER_SIZE = 1024
 
-  private stream = new Readable({
-    read: () => {
-      const buffer = this.generate()
-      this.stream.push(buffer)
+  private device = sdl.audio.openDevice(
+    { type: "playback" },
+    {
+      channels: 1,
+      frequency: SAMPLE_RATE,
+      format: "s16",
     },
-  })
+  )
+
+  constructor() {
+    this.device.pause() // start paused
+  }
 
   public start() {
-    this.stream.pipe(this.speaker)
+    this.device.play()
   }
 
   private generate(): Buffer {
@@ -43,34 +41,27 @@ export class Audio {
   private next_sample() {
     if (!this.playing) return 0
 
+    const sample = Math.sin(this.phase * Math.PI * 2)
+
     this.phase += this.pitch / SAMPLE_RATE
 
-    while (this.phase >= 1) {
-      this.phase--
-      this.bit_index = (this.bit_index + 1) & 127
-    }
+    if (this.phase >= 1) this.phase -= 1
 
-    const byte = this.pattern[this.bit_index >> 3]
-    const bit = (byte >> (7 - (this.bit_index & 7))) & 1
-
-    return bit ? 12000 : -12000
-  }
-
-  public set_pitch(pitch: number) {
-    this.pitch = 4000 * Math.pow(2, (pitch - 64) / 48)
+    return sample * 8000
   }
 
   public play() {
     this.playing = true
+
+    // fill SDL queue
+    this.device.enqueue(this.generate())
   }
 
   public stop() {
     this.playing = false
-    this.reset()
   }
 
-  public reset() {
-    this.bit_index = 0
-    this.phase = 0
+  public set_pitch(pitch: number) {
+    this.pitch = 4000 * Math.pow(2, (pitch - 64) / 48)
   }
 }

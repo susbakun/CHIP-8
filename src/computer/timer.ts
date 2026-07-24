@@ -9,6 +9,7 @@ export class Timer {
 
     if (this.soundTimer > 0) {
       this.soundTimer--
+      audio.play()
 
       if (this.soundTimer === 0) {
         audio.stop()

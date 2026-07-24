@@ -610,6 +610,7 @@ export class CPU {
         for (let i = 0; i < 16; i++) {
           audio.pattern[i] = this.memory[this.i_index + i]
         }
+
         break
 
       // set pitch
@@ -628,13 +629,6 @@ export class CPU {
 
       case 0x18:
         timer.soundTimer = rx_value
-
-        if (rx_value > 0) {
-          audio.play()
-        } else {
-          audio.stop()
-        }
-
         break
 
       // add to index
