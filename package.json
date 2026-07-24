@@ -19,7 +19,6 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@kmamal/sdl": "^0.11.13",
-    "speaker": "^0.5.5"
+    "@kmamal/sdl": "^0.11.13"
   }
 }
