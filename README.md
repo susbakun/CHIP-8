@@ -1,8 +1,11 @@
+I updated it to mention the SDL audio system, XO-CHIP audio work, and better describe the current scope. I also cleaned up a few wording issues.
+
+````md
 # CHIP-8 Emulator
 
-A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for window creation, rendering, and keyboard input.
+A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for window creation, rendering, keyboard input, and audio output.
 
-The emulator supports both the original **CHIP-8** instruction set and **Super-CHIP (SCHIP)** extensions, including high-resolution graphics, scrolling instructions, large fonts, and RPL registers.
+The emulator supports the original **CHIP-8** instruction set and **Super-CHIP (SCHIP)** extensions, including high-resolution graphics, scrolling instructions, large fonts, and RPL registers.
 
 <img width="752" height="464" alt="Screenshot 2026-07-19 at 3 35 43 AM" src="https://github.com/user-attachments/assets/fa2f404f-4a8f-482e-a9f5-2a104d5c15b4" />
 
@@ -17,6 +20,14 @@ The emulator supports both the original **CHIP-8** instruction set and **Super-C
   * Scrolling instructions (`00CN`, `00FB`, `00FC`)
   * Large font support (`FX30`)
   * RPL flag registers (`FX75` / `FX85`)
+
+* Audio system
+
+  * SDL-based PCM audio output
+  * CHIP-8 sound timer support
+  * XO-CHIP style audio pattern playback foundation
+  * Configurable pitch and waveform generation
+
 * Configurable interpreter quirks
 * 60 Hz delay and sound timers
 * XOR sprite rendering with collision detection
@@ -31,7 +42,7 @@ The emulator supports both the original **CHIP-8** instruction set and **Super-C
 
 ```bash
 npm install
-```
+````
 
 ## Running
 
@@ -41,7 +52,11 @@ Start the emulator:
 npm run dev
 ```
 
-By default, this loads `roms/ibm.ch8`.
+By default, this loads:
+
+```
+roms/ibm.ch8
+```
 
 To load a different ROM:
 
@@ -81,14 +96,15 @@ src/
 ├── computer/
 │   ├── cpu/         CPU implementation and opcode decoding
 │   ├── display.ts   SDL renderer and framebuffer
+│   ├── audio.ts     SDL audio output and sound generation
 │   ├── keyboard.ts  CHIP-8 keypad input
 │   ├── timer.ts     Delay and sound timers
 │   └── index.ts     Emulator entry point
 ├── font.ts          Standard and Super-CHIP fonts
 └── types.ts         Shared types
+├── index.ts         Program entry
 
 roms/                CHIP-8 and SCHIP ROMs
-test/                Vitest unit tests
 ```
 
 ## Compatibility
@@ -97,11 +113,11 @@ The emulator has been tested with several classic ROMs and test suites, includin
 
 * IBM Logo
 * Pong
-* Opcode test ROMs
-* Super-CHIP test ROMs
 * SweetCopter
+* Skyward
 
 ## References
 
 * [Guide to making a CHIP-8 emulator](https://tobiasvl.github.io/blog/write-a-chip-8-emulator)
 * [Mastering SuperChip](https://johnearnest.github.io/Octo/docs/SuperChip.html)
+* [XO-CHIP Specification](https://johnearnest.github.io/Octo/docs/XO-ChipSpecification.html)
