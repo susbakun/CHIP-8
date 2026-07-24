@@ -744,6 +744,9 @@ export class CPU {
   }
 
   private store_in_memory(addr: number, value: number) {
+    if (addr >= this.memory.length || addr < 0)
+      throw new Error("the address should be in memory bound")
+
     this.memory[addr] = value
   }
 }
