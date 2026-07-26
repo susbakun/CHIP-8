@@ -1,6 +1,3 @@
-I updated it to mention the SDL audio system, XO-CHIP audio work, and better describe the current scope. I also cleaned up a few wording issues.
-
-````md
 # CHIP-8 Emulator
 
 A CHIP-8 emulator written in TypeScript. It uses [@kmamal/sdl](https://github.com/kmamal/node-sdl) for window creation, rendering, keyboard input, and audio output.
@@ -42,7 +39,6 @@ The emulator supports the original **CHIP-8** instruction set and **Super-CHIP (
 
 ```bash
 npm install
-````
 
 ## Running
 
